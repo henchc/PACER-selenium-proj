@@ -1,2 +1,2 @@
 # PACER-selenium
-Library for interacting with PACER via selenium
+Project for scraping PACER via selenium
