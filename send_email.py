@@ -1,8 +1,8 @@
 def send_email(email_address, password, recipient, subject, body):
-***REMOVED***
+    '''
     send email using gmail
     http://stackoverflow.com/questions/10147455/how-to-send-an-email-with-gmail-as-provider-using-python
-***REMOVED***
+    '''
     import smtplib
 
     FROM = email_address
@@ -26,13 +26,13 @@ def send_email(email_address, password, recipient, subject, body):
 
 if __name__ == "__main__":
 
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
-    ***REMOVED***
+    import csv
+    with open('distlogin.csv', 'r', encoding="utf-8") as f:
+        reader = csv.reader(f)
+        distlogin_csv = list(reader)
 
-    ***REMOVED***
-    ***REMOVED***
+    email_address = distlogin_csv[0][0]
+    email_password = distlogin_csv[0][1]
 
     send_email(email_address,
                email_password,
