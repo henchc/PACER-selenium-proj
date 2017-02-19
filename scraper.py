@@ -66,9 +66,6 @@ def get_docket_rows(driver, case_num, year, court_perl):
         driver.find_element_by_name("case_num").clear()
         driver.find_element_by_name("case_num").send_keys(case_num)
         driver.find_element_by_id('case_number_find_button_0').click()
-        driver.find_element_by_name("date_from").send_keys("01/01/" + year)
-        driver.find_element_by_name("date_to").send_keys(
-            datetime.date.today().strftime("%m/%d/%Y"))
 
         # wait until case is found and number is changed
         count = 0
@@ -80,6 +77,14 @@ def get_docket_rows(driver, case_num, year, court_perl):
                 break
 
     time.sleep(random.randint(1,3))  # case has been found, proceed
+
+    driver.find_element_by_name("date_from").clear()
+    driver.find_element_by_name("date_from").send_keys("01/01/1990")
+    driver.find_element_by_name("date_to").clear()
+    driver.find_element_by_name("date_to").send_keys(
+        datetime.date.today().strftime("%m/%d/%Y"))
+    
+    time.sleep(random.randint(1,3))
     driver.find_element_by_name('button1').click()
 
     # get source to get docket info
@@ -120,12 +125,16 @@ def get_docket_rows(driver, case_num, year, court_perl):
             for i, column in enumerate(row.findAll("td")):
                 if i == 0:
                     row_data.append(column.text)
-                elif i >= 2:
+                elif i == 2:
                     cell_urls = {}
                     urls = column.findAll("a")
                     for u in urls:
-                        cell_urls[u.text] = u.get("href")
-                    row_data.append((column.text, cell_urls))
+                        cell_urls[u.text.strip()] = u.get("href")
+                        
+                    row_data.append((column.text.strip(), cell_urls))
+                        
+                elif i > 2:
+                    row_data.append(column.text.strip())
 
             if len(row_data) > 0:
                 docket_rows.append(tuple(row_data))
@@ -165,7 +174,6 @@ def process_link(link_str, base_url, district, already_scraped, adversary=False,
                         driver.find_element_by_xpath(
                             '//*[@id="cmecfMainContent"]/form/input').click()
 
-                    download_name = dl_id + ".pdf"
                     file_name = tds[2].text
                     new_name = sift_chars(file_name.strip()) + ".pdf"
 
@@ -190,13 +198,19 @@ def process_link(link_str, base_url, district, already_scraped, adversary=False,
                         
                     # wait for file to download
                     counter = 0
-                    while not os.path.exists(download_name):
+                    while len(glob.glob("*.pdf")) == 0:
                         time.sleep(1)
                         counter += 1
                         if counter > 500:
                             break
-                            
-                    os.rename(download_name, new_path)
+                    try:
+                        download_name = glob.glob("*.pdf")[0]
+                        os.rename(download_name, new_path)
+                    
+                    except:
+                        if "Restricted Web Site" in str(driver.page_source):
+                            new_path = "RESTRICTED"
+                    
                     already_scraped.append(dl_id)
                     f_paths.append(new_path)
 
@@ -214,7 +228,6 @@ def process_link(link_str, base_url, district, already_scraped, adversary=False,
         
         if valid_id == True:
             if dl_id not in already_scraped:
-                download_name = dl_id + ".pdf"
                 
                 try:
                     driver.find_element_by_xpath(
@@ -243,13 +256,20 @@ def process_link(link_str, base_url, district, already_scraped, adversary=False,
 
                     # wait for file to download
                     counter = 0
-                    while not os.path.exists(download_name):
+                    while len(glob.glob("*.pdf")) == 0:
                         time.sleep(1)
                         counter += 1
                         if counter > 500:
                             break
 
-                    os.rename(download_name, new_path)
+                    try:
+                        download_name = glob.glob("*.pdf")[0]
+                        os.rename(download_name, new_path)
+                    
+                    except:
+                        if "Restricted Web Site" in str(driver.page_source):
+                            new_path = "RESTRICTED"
+                            
                     already_scraped.append(dl_id)
                     f_paths.append(new_path)
                     
@@ -336,8 +356,8 @@ def get_associated_cases(soup):
 
             for row in docket_rows:  # just 20 rows CHANGE FOR FULL
                 docket_date = row[0]
-                docket_text = row[2][0].strip()
-                if len(row[1]) > 1 and row[1][0][0].isdigit():
+                docket_text = row[2].strip()
+                if len(row[1]) > 1 and len(row[1][0]) > 0 and row[1][0][0].isdigit():
                     docket_number = row[1][0].split()[0]
                     
                 else:
@@ -389,29 +409,27 @@ def get_associated_cases(soup):
 with open('dataset.csv', 'r', encoding="utf-8") as f:
     reader = csv.reader(f)
     data = list(reader)
-
-# change for each district
-WDTX = [x for x in data if x[-2] == "WD TX"]
-
-district = "WDTX"
-
-# skip if case already scraped
-num_folders = len([fname for fname in glob.glob(district + "/*")])
-
-WDTX = WDTX[num_folders-1:]
-
+    
 with open('distlogin.csv', 'r', encoding="utf-8") as f:
     reader = csv.reader(f)
     distlogin_csv = list(reader)
     
+with open('completed', 'r') as f:
+    completed_cases = f.read().split('\n')
+    
 email_address = distlogin_csv[0][0]
 email_password = distlogin_csv[0][1]
 dl_directory = distlogin_csv[0][2]
+district = distlogin_csv[1][0]
+
+# change for each district
+dist_data = [x for x in data if x[-2] == district]
+district = ''.join(district.split())
 
 distlogin = {}
 
 for r in distlogin_csv[1:]:
-    distlogin[r[0]] = {"login": r[1],
+    distlogin[district] = {"login": r[1],
                        "pw": r[2],
                        "base_url": r[3]}
 
@@ -424,7 +442,7 @@ if not os.path.exists(district):
 
 driver = login_to_pacer(login_user=distlogin[district]["login"], login_password=distlogin[district]["pw"], dl_directory=dl_directory)
 
-for case in WDTX:  # just two cases CHANGE FOR FULL
+for case in dist_data:  # just two cases CHANGE FOR FULL
     
     print(datetime.datetime.time(datetime.datetime.now()))
     
@@ -434,82 +452,79 @@ for case in WDTX:  # just two cases CHANGE FOR FULL
     petition_date = case[3]
     year = case[6]
     
-    send_email(email_address, email_password, email_address, "New Case", "JEID" + str(je_id))
+    if je_id not in completed_cases:
+    
+        send_email(email_address, email_password, email_address, "New Case", "JEID" + str(je_id))
 
-    if not os.path.exists(district + "/" + je_id):
-        os.makedirs(district + "/" + je_id)
-        
-    if not os.path.exists(district + "/" + je_id + "/" + je_id + "_data.csv"):
-        # for output data
-        with open(district + "/" + je_id + "/" + je_id + "_data.csv", 'w', encoding="utf-8") as f:
-            w = csv.writer(f, delimiter=',')
-            header = ("Company","je_id","petition_date","casenum","xdistfiled","docket_text","docket_number","docket_date","file_link","[lawfirm1]","[lawyers1]","[lawfirm2]","[lawyers2]","[lawfirm3]","[lawyers3]","[moving party]","[motion caption]")
-            w.writerow(header)
+        if not os.path.exists(district + "/" + je_id):
+            os.makedirs(district + "/" + je_id)
 
-    # change for each district
-    base_url = distlogin[district]["base_url"]
-    court_perl = base_url + "/cgi-bin/DktRpt.pl"
-    docket_rows = get_docket_rows(
-        driver=driver,
-        case_num=case_num,
-        year=year,
-        court_perl=court_perl)
+        if not os.path.exists(district + "/" + je_id + "/" + je_id + "_data.csv"):
+            # for output data
+            with open(district + "/" + je_id + "/" + je_id + "_data.csv", 'w', encoding="utf-8") as f:
+                w = csv.writer(f, delimiter=',')
+                header = ("Company","je_id","petition_date","casenum","xdistfiled","docket_text","docket_number","docket_date","file_link","[lawfirm1]","[lawyers1]","[lawfirm2]","[lawyers2]","[lawfirm3]","[lawyers3]","[moving party]","[motion caption]")
+                w.writerow(header)
 
-    for row in docket_rows:  # just 20 rows CHANGE FOR FULL
-        docket_date = row[0]
-        docket_text = row[2][0].strip()
-        if len(row[1]) > 1 and row[1][0][0].isdigit():
-            docket_number = row[1][0].split()[0]
-        else:
-            with open(district + "/" + je_id + "/" + je_id + "_data.csv", 'r', encoding="utf-8") as f:
-                reader = csv.reader(f)
-                temp_data = list(reader)
-            docket_number = temp_data[-1][-3]
+        # change for each district
+        base_url = distlogin[district]["base_url"]
+        court_perl = base_url + "/cgi-bin/DktRpt.pl"
+        docket_rows = get_docket_rows(
+            driver=driver,
+            case_num=case_num,
+            year=year,
+            court_perl=court_perl)
 
-        already_scraped = []
-        paths = []
-        for c in row:
-            if len(c) > 1 and isinstance(c[1], dict) and len(c[1]) > 0:
-                for k in c[1].keys():
-                    url = c[1][k]
-                    res = process_link(
-                        link_str=url,
-                        base_url=base_url,
-                        district=district,
-                        already_scraped=already_scraped)
-                    file_paths = res[0]
-                    if len(file_paths) > 0:
-                        already_scraped = res[1]
-                        paths.extend(file_paths)
+        for row in docket_rows:  # just 20 rows CHANGE FOR FULL
+            docket_date = row[0]
+            docket_text = row[2].strip()
+            if len(row[1]) > 1 and len(row[1][0]) > 0 and row[1][0][0].isdigit():
+                docket_number = row[1][0].split()[0]
+            else:
+                with open(district + "/" + je_id + "/" + je_id + "_data.csv", 'r', encoding="utf-8") as f:
+                    reader = csv.reader(f)
+                    temp_data = list(reader)
+                docket_number = temp_data[-1][-3]
 
-                    time.sleep(random.randint(1,3))  # wait after each link call
+            already_scraped = []
+            paths = []
+            for c in row:
+                if len(c) > 1 and isinstance(c[1], dict) and len(c[1]) > 0:
+                    for k in c[1].keys():
+                        url = c[1][k]
+                        res = process_link(
+                            link_str=url,
+                            base_url=base_url,
+                            district=district,
+                            already_scraped=already_scraped)
+                        file_paths = res[0]
+                        if len(file_paths) > 0:
+                            already_scraped = res[1]
+                            paths.extend(file_paths)
 
-        csv_row = [
-            company,
-            je_id,
-            petition_date,
-            case_num,
-            district,
-            docket_text,
-            docket_number,
-            docket_date,
-            "; ".join(paths)]
-        scraped_data[district].append(csv_row)
+                        time.sleep(random.randint(1,3))  # wait after each link call
 
-        with open(district + "/" + je_id + "/" + je_id + "_data.csv", 'a', encoding="utf-8") as f:
-            w = csv.writer(f, delimiter=',')
-            w.writerow(csv_row)
+            csv_row = [
+                company,
+                je_id,
+                petition_date,
+                case_num,
+                district,
+                docket_text,
+                docket_number,
+                docket_date,
+                "; ".join(paths)]
+            scraped_data[district].append(csv_row)
+
+            with open(district + "/" + je_id + "/" + je_id + "_data.csv", 'a', encoding="utf-8") as f:
+                w = csv.writer(f, delimiter=',')
+                w.writerow(csv_row)
+                
+        with open('completed', 'a') as f:
+            f.write('\n' + je_id)
 
 send_email(email_address, email_password, email_address, "Finished", "Done scraping." + str(je_id))
 print(datetime.datetime.time(datetime.datetime.now()))
-
-
-# In[3]:
-
-try:
-    print("e")
-except:
-    print("h")
 
 
 # In[ ]:
